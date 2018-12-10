@@ -97,6 +97,8 @@ def addBuildName(file):
                 if line.startswith(">"):
                     line = line.strip('>')
                     line = ">" + buildname + '_' + line
+                    line = re.sub('[()]',"",line)
+                    print(line)
                     w.write(line)
                 else:
                     w.write(line)
@@ -108,7 +110,7 @@ def runCrisprCasFinder(input, output, min, max):
     #more options can be added later.
     #TODO: wait until CCF dependencies are installed
     try:
-        os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -outdir " + str(output) + " -minDR " + str(min) + " -maxDR " + str(max))
+        os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -outdir " + str(output) + "-so -minDR " + str(min) + " -maxDR " + str(max))
         #os.system("CRISPRCasFinder.pl -help")
         print("Done with CCF")
     except Exception as e:
@@ -155,12 +157,13 @@ def main(args):
     run blastn script
     '''
     #check if output path exists. If not, create it
+    '''
     try:
-        os.makedirs(args.output)
+        os.makedirs(args.output, exist_ok=True)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
-
+    '''
     #runs batch of contigs/scaffolds if dir is given
     fastalist = []
     if os.path.isdir(args.input):
@@ -170,10 +173,11 @@ def main(args):
             print(f)
     else:
         #just get the single file that is given
-        if not f.endswith('.fasta'):
+        if not args.input.endswith('.fasta'):
             sys.exit("Not a valid fasta file. Check input argument.")
         else:
             fastalist.append(args.input)
+
     if len(fastalist) == 0:
         sys.exit("Given directory is empty or does not exist. Check input argument.")
 
