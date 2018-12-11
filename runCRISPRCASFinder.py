@@ -18,6 +18,7 @@ import os
 import errno
 from os import listdir
 from os.path import isfile, join, splitext
+import time
 
 def getContigs(seqnames):
     contiglist = list()
@@ -98,7 +99,6 @@ def addBuildName(file):
                     line = line.strip('>')
                     line = ">" + buildname + '_' + line
                     line = re.sub('[()]',"",line)
-                    print(line)
                     w.write(line)
                 else:
                     w.write(line)
@@ -110,14 +110,13 @@ def runCrisprCasFinder(input, output, min, max):
     #more options can be added later.
     #TODO: wait until CCF dependencies are installed
     try:
-        os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -outdir " + str(output) + "-so -minDR " + str(min) + " -maxDR " + str(max))
+        os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -so /opt/vmatch-2.3.0/SELECT/sel392.so -outdir " + str(output) + " -minDR " + str(min) + " -maxDR " + str(max))
         #os.system("CRISPRCasFinder.pl -help")
         print("Done with CCF")
     except Exception as e:
         print("fuck")
         print(str(e))
         sys.exit(2)
-
 
 def getSpacers(GFFfiles):
     '''
@@ -151,56 +150,75 @@ def getSpacers(GFFfiles):
     w.close()
     return queryfile
 
+def makeDirs(outputlocation):
+    if not os.path.exists(outputlocation):
+        os.makedirs(str(outputlocation + "/blastout"))
+    else:
+        print("Directory already exists")
+
+def getInputfiles(curwd, input):
+
+    fastalist = []
+    if os.path.isdir(input):
+        #for correct abspath, wd has to be set where the input files are
+        os.chdir(input)
+        for file in os.listdir('.'):
+            print(os.path.join(input,file))
+            if file.endswith(".fasta"):
+                fastalist.append(os.path.abspath(file))
+        os.chdir(curwd)
+        for f in fastalist:
+            print(os.path.abspath(f))
+    else:
+        #just get the single file that is given
+        if not input.endswith('.fasta'):
+            sys.exit("Not a valid fasta file. Check input argument.")
+        else:
+            fastalist.append(input)
+    return fastalist
+
 def main(args):
     '''
     run CRISPRCasFinder
     run blastn script
     '''
     #check if output path exists. If not, create it
-    '''
-    try:
-        os.makedirs(args.output, exist_ok=True)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    '''
+    makeDirs(args.output)
+
     #runs batch of contigs/scaffolds if dir is given
-    fastalist = []
-    if os.path.isdir(args.input):
-        #get all files that end with .fasta
-        fastalist = [os.path.abspath(f) for f in os.listdir(args.input) if f.endswith('.fasta')]
-        for f in fastalist:
-            print(f)
-    else:
-        #just get the single file that is given
-        if not args.input.endswith('.fasta'):
-            sys.exit("Not a valid fasta file. Check input argument.")
-        else:
-            fastalist.append(args.input)
+    curcwd = os.getcwd()
+    fastalist = getInputfiles(curcwd,args.input)
 
     if len(fastalist) == 0:
         sys.exit("Given directory is empty or does not exist. Check input argument.")
 
     #loop to run single or multiple files. do this in parallel (maybe) later
-    #run CRISPRCasFinder. Creates output in outdir (if given, otherwise created)
+    absBVDB = os.path.abspath(args.blastviraldb)
+    absOutput = os.path.abspath(args.output)
+    outpath = absOutput + '/CCF/'
+    os.makedirs(outpath)
+
+
     for fastafile in fastalist:
+        os.chdir(curcwd)
         newpath, buildname = addBuildName(fastafile)
         absInput = os.path.abspath(newpath)
-        absOutput = os.path.abspath(args.output)
+        print(absInput)
         if args.reverse:
             try:
                 print("Fetching reverse complementary fastas ...")
                 getReverseComplement(absInput)
-            except Exception as e:
-                print(str(e))
+            except:
+                print('Oops.')
 
         print("Start CCF ...")
-        runCrisprCasFinder(absInput,absOutput,args.minimum,args.maximum)
+        os.chdir(outpath)
+        runCrisprCasFinder(absInput,buildname,args.minimum,args.maximum)
 
         #create filepath for blast output
-        blastout = absOutput + "/" + buildname + "blastout.out"
+        blastout = absOutput  + "/blastout/" + buildname + "blastout.out"
         print("Run blast ...")
-        runLocalBlast.runBlast(newpath,args.blastviraldb,blastout,args.percidentity)
+        runLocalBlast.runBlast(absInput,absBVDB,blastout,args.percidentity)
         print("Done with blast")
 
 if __name__ == '__main__':
@@ -214,11 +232,9 @@ if __name__ == '__main__':
         parser.add_argument('-min','--minimum', help = 'minimal length crispr repeat', default = 23)
         parser.add_argument('-max','--maximum', help = 'maximal length crispr repeat', default = 55)
         parser.add_argument('-pid','--percidentity', help = 'minimum sequence identity blastn', default = 95)
-
         args = parser.parse_args()
 
         main(args)
     except:
         print("See -h for help")
         sys.exit(1)
-    #main(args)
