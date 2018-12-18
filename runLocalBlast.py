@@ -22,14 +22,10 @@ def makeBlastDB(virdbfastas,blastvirdb):
     os.system("makeblastdb -in " + virdbfastas + " -dbtype nucl -out " + blastvirdb + " -parse_seqids")
 
 def runBlast(query,blastvirdb,output,pid):
-    # run contigs vs viral database.
     #run blastn
     print(" ".join([query,blastvirdb,output,str(pid)]))
-    #niet de goede outputformat!
-    #blastn = NcbiblastnCommandline(query = query, db = blastvirdb, out = output, perc_identity = pid, outfmt = "6")
-    #stdout, stderr = blastn()
-
-    os.system("blastn -query " + query + " -db " + blastvirdb + " -outfmt \"6 std pident nident qseq sseq\" -out " + output)
+    os.system("blastn -query " + query + " -word_size 7 -db " + blastvirdb + " -evalue 10 -outfmt \"6 std pident nident\" -out " + output)
+    #os.system("blastn -query " + query + " -db " + blastvirdb + " -evalue 100 -out " + output)
     makeShortlist(output,pid)
 
 ###for testing purposes. implement in main program later
