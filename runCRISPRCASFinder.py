@@ -17,9 +17,9 @@ import re
 import runLocalBlast
 import os
 import errno
-from os import listdir
-from os.path import isfile, join, splitext
+import json
 
+#TO BE DELETED
 def getContigs(seqnames):
     contiglist = list()
     prog = re.compile("contig_\d+")
@@ -30,8 +30,9 @@ def getContigs(seqnames):
         contiglist.append(result)
     return contiglist
 
+#TO BE DELETED
 def getSequences(mypath):
-    files = [f for f in listdir(mypath) if isfile(join(mypath, f))]
+    files = [f for f in os.listdir(mypath) if os.isfile(os.join(mypath, f))]
     seqnamelist = list()
 
     for filename in files:
@@ -40,8 +41,41 @@ def getSequences(mypath):
             for line in f:
                 if line.startswith(">"):
                     seqnamelist.append(line)
-                    #print(line)
     return seqnamelist
+
+def readCCFjson(jsonfile,evidence_threshold,buildname):
+    conservationDRs = []
+    ATcontent = []
+    spacerfasta = '../spacers/' + buildname + '.fasta'
+
+    with open(jsonfile,'r') as j:
+        data = json.load(j)
+        with open(spacerfasta, 'w') as w:
+            for seq in data["Sequences"]:
+                if len(seq["Crisprs"]) > 0:
+                    for crispr in seq["Crisprs"]:
+                        if crispr["Evidence_Level"] >= evidence_threshold:
+                            conservationDRs.append(crispr["Conservation_DRs"])
+                            ID = crispr["Name"]
+                            if crispr["Potential_Orientation"] == '-':
+                                nspacers = 0
+                            else:
+                                nspacers = crispr["Spacers"] - 1
+                            for reg in crispr["Regions"]:
+                                if reg["Type"] == "LeftFLANK" and reg["Leader"] == 1:
+                                    ATcontent.append(reg["AT"])
+                                elif reg["Type"] == "RightFLANK" and reg["Leader"] == 1:
+                                    ATcontent.append(reg["AT"])
+                                elif reg["Type"] == "Spacer":
+                                    line = '>' + ID + '_spacerID_' + str(nspacers) + '\n'+ reg["Sequence"] + '\n'
+                                    w.write(line)
+                                    if crispr["Potential_Orientation"] == '-':
+                                        nspacers += 1
+                                    else:
+                                        nspacers -= 1
+        w.close()
+    j.close()
+    return conservationDRs, ATcontent, spacerfasta
 
 def getReverseComplement(contigs):
     '''
@@ -94,21 +128,19 @@ def getReverseComplement(contigs):
         a.write(reversedsequence)
     a.close()
 
-def addBuildName(file):
+def addBuildName(file,newInPath):
     # add the filename in front of each fasta sequence of the input.
     # copies inputfile and returns new file and path
     buildname = file.strip('.fasta').split('/')[-1] #get filename without extension
-    filepathlist = file.split('/')[:-2] #get path
     newfilename = 'fwd_and_rev_' + buildname + '.fasta'
-    filepathlist.append(newfilename)
-    newpath = "/".join(filepathlist)
+    newpath = newInPath + newfilename
     with open(file, 'r') as f:
         with open(newpath, 'w') as w:
             for line in f:
                 if line.startswith(">"):
                     line = line.strip('>')
                     line = ">" + buildname + '_' + line
-                    #apparently, CCF can\'t handle parentheses
+                    #apparently, CCF can\'t handle parentheses and dots
                     line = re.sub('[().]',"",line)
                     w.write(line)
                 else:
@@ -122,13 +154,13 @@ def runCrisprCasFinder(input, output, min, max):
     #TODO: wait until CCF dependencies are installed
     try:
         os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -q -so /opt/vmatch-2.3.0/SELECT/sel392.so -outdir " + str(output) + " -minDR " + str(min) + " -maxDR " + str(max))
-
         print("Done with CCF")
     except Exception as e:
         print("nope")
         print(str(e))
         sys.exit(2)
 
+##can be deleted if JSON works
 def getSpacers(GFFfiles, hits, buildname):
     '''
     Each strain has it's own folder with the crisprcasfinderresults
@@ -163,6 +195,7 @@ def getSpacers(GFFfiles, hits, buildname):
     w.close()
     return queryfile
 
+##can be deleted if JSON works
 def getCCFhits(summaryfile):
     # nog toe te voegen aan de main. extractie van hits in CCF
     summary = pd.read_csv(summaryfile,delimiter = '\t')
@@ -206,7 +239,6 @@ def main(args):
     #runs batch of contigs/scaffolds if dir is given
     curcwd = os.getcwd()
     fastalist = getInputfiles(curcwd,args.input)
-
     if len(fastalist) == 0:
         sys.exit("Given directory is empty or does not exist. Check input argument.")
 
@@ -214,11 +246,16 @@ def main(args):
     absBVDB = os.path.abspath(args.blastviraldb)
     absOutput = os.path.abspath(args.output)
     outpath = absOutput + '/CCF/'
+    revInvPath = absOutput + '/rev_inv/'
     os.makedirs(outpath)
+    os.makedirs(revInvPath)
 
+    #empty list for hist sequence lengths
+    ATstats = []
+    DRcons = []
     for fastafile in fastalist:
         os.chdir(curcwd)
-        newpath, buildname = addBuildName(fastafile)
+        newpath, buildname = addBuildName(fastafile,revInvPath)
         absInput = os.path.abspath(newpath)
         if args.reverse:
             try:
@@ -226,19 +263,36 @@ def main(args):
                 getReverseComplement(absInput)
             except:
                 print('Oops.')
-
-        print("Start CCF ...")
+        print("\nStart CCF ...")
         os.chdir(outpath)
-
         runCrisprCasFinder(absInput,buildname,args.minimum,args.maximum)
-        CCFhits = getCCFhits(str(buildname + '/TSV/CRISPR-Cas_summary.tsv'))
-        spacerfasta = getSpacers('/GFF/', CCFhits, buildname)
-        #create filepath for blast output
+        conservationDRs, ATcontent, spacerfasta = readCCFjson(buildname + '/result.json',args.evidencethreshold,buildname)
+        DRcons += conservationDRs
+        ATstats += ATcontent
         absspacer = os.path.abspath(os.path.join('.',spacerfasta))
+        #seqlengths = runLocalBlast.seqlength(absspacer)
+        #spacerlengths += seqlengths
         blastout = absOutput  + "/blastout/" + buildname + "blastout.out"
-        print("Run blast ...")
+        print("\nRun blast ...")
         runLocalBlast.runBlast(absspacer,absBVDB,blastout,args.percidentity)
-        print("Done with blast")
+        print("\nDone with blast")
+    #make plot of spacerlengths
+    if args.statistics:
+        #runLocalBlast.seqPlot(spacerlengths,args.minimum,args.maximum)
+
+        fig, axs = plt.subplots(2, 1, constrained_layout=True)
+        axs[0].hist(DRcons,bins = range(0,100,1))
+        axs[0].set_title('Direct repeat conservation')
+        axs[0].set_xlabel('Percentage conserved (%)')
+        axs[0].set_ylabel('Counts')
+        fig.suptitle('CRISPR result', fontsize=16)
+
+        axs[1].hist(ATstats,bins = range(0,100,1))
+        axs[1].set_xlabel('Percentage AT (%)')
+        axs[1].set_title('AT content of leader sequence')
+        axs[1].set_ylabel('Counts')
+
+        plt.show()
 
 if __name__ == '__main__':
     try:
@@ -251,6 +305,8 @@ if __name__ == '__main__':
         parser.add_argument('-min','--minimum', help = 'minimal length crispr repeat', default = 23)
         parser.add_argument('-max','--maximum', help = 'maximal length crispr repeat', default = 55)
         parser.add_argument('-pid','--percidentity', help = 'minimum sequence identity blastn', default = 95)
+        parser.add_argument('-stats','--statistics',help = 'make plots with overview of data', default = False, action = 'store_true')
+        parser.add_argument('-et','--evidencethreshold', help = 'minimum evidence level for crispr detection. 1 - 4, higher is stricter.',type = int ,default = 4,choices = range(1,5,1))
         args = parser.parse_args()
 
         main(args)
