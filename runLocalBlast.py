@@ -2,7 +2,24 @@
 import sys
 import argparse
 import os
+import matplotlib.pyplot as plt
+
 #from Bio.Blast.Applications import NcbiblastnCommandline
+def seqPlot(lengthlist,min,max):
+    plt.hist(lengthlist,bins = range(min,max +1,1))
+    plt.show()
+
+def seqlength(seq):
+    with open(seq,'r') as s:
+        seqLengths = []
+        for line in s:
+            if line.startswith(">") or line in ['\n']:
+                continue
+            else:
+                seqLengths.append(len(line))
+    s.close()
+    return seqLengths
+
 
 def makeShortlist(blastout,pid):
     #extract all sequences with %identity > 95%
