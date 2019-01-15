@@ -6,8 +6,7 @@ Main program:
 - arguments passed to blast
 - split sequences
 TODO:
-- CRISPRTOOL install: wait for install of dependencies
-- test .gff fetcher -> output to blast (new script file?)
+- start making database
 '''
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -16,19 +15,25 @@ import argparse
 import re
 import runLocalBlast
 import os
-import errno
 import json
 
-#TO BE DELETED
-def getContigs(seqnames):
-    contiglist = list()
-    prog = re.compile("contig_\d+")
+def getContigNode(seqname):
+    #works for spades and clc output (scaffolds/contigs)
+    prog1 = re.compile("contig_\d+")
+    prog2 = re.compile("NODE_\d+")
+    m1 = prog1.search(seqname)
+    m2 = prog2.search(seqname)
 
-    for n in seqnames:
-        m = prog.search(n)
-        result = m.group(0)
-        contiglist.append(result)
-    return contiglist
+    if m1 is not None:
+        s = m1
+    elif m2 is not None:
+        s = m2
+    else:
+        prog = re.compile(">\d+_")
+        m = prog.search(seqname)
+        s = m.group(0)
+    result = s.group(0)
+    return result
 
 #TO BE DELETED
 def getSequences(mypath):
@@ -132,14 +137,14 @@ def addBuildName(file,newInPath):
     # add the filename in front of each fasta sequence of the input.
     # copies inputfile and returns new file and path
     buildname = file.strip('.fasta').split('/')[-1] #get filename without extension
-    newfilename = 'fwd_and_rev_' + buildname + '.fasta'
+    newfilename = 'modified_' + buildname + '.fasta'
     newpath = newInPath + newfilename
     with open(file, 'r') as f:
         with open(newpath, 'w') as w:
             for line in f:
                 if line.startswith(">"):
-                    line = line.strip('>')
-                    line = ">" + buildname + '_' + line
+                    id = getContigNode(line)
+                    line = ">" + buildname + '_' + id + "\n"
                     #apparently, CCF can\'t handle parentheses and dots
                     line = re.sub('[().]',"",line)
                     w.write(line)
@@ -150,8 +155,6 @@ def addBuildName(file,newInPath):
     return newpath,buildname
 
 def runCrisprCasFinder(input, output, min, max):
-    #more options can be added later.
-    #TODO: wait until CCF dependencies are installed
     try:
         os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -q -so /opt/vmatch-2.3.0/SELECT/sel392.so -outdir " + str(output) + " -minDR " + str(min) + " -maxDR " + str(max))
         print("Done with CCF")
@@ -211,7 +214,6 @@ def makeDirs(outputlocation):
         print("Directories already exist")
 
 def getInputfiles(curwd, input):
-
     fastalist = []
     if os.path.isdir(input):
         #for correct abspath, wd has to be set where the input files are
@@ -253,6 +255,7 @@ def main(args):
     #empty list for hist sequence lengths
     ATstats = []
     DRcons = []
+    spacerlengths = []
     for fastafile in fastalist:
         os.chdir(curcwd)
         newpath, buildname = addBuildName(fastafile,revInvPath)
@@ -270,8 +273,8 @@ def main(args):
         DRcons += conservationDRs
         ATstats += ATcontent
         absspacer = os.path.abspath(os.path.join('.',spacerfasta))
-        #seqlengths = runLocalBlast.seqlength(absspacer)
-        #spacerlengths += seqlengths
+        seqlengths = runLocalBlast.seqlength(absspacer)
+        spacerlengths += seqlengths
         blastout = absOutput  + "/blastout/" + buildname + "blastout.out"
         print("\nRun blast ...")
         runLocalBlast.runBlast(absspacer,absBVDB,blastout,args.percidentity)
@@ -280,7 +283,7 @@ def main(args):
     if args.statistics:
         #runLocalBlast.seqPlot(spacerlengths,args.minimum,args.maximum)
 
-        fig, axs = plt.subplots(2, 1, constrained_layout=True)
+        fig, axs = plt.subplots(3, 1, constrained_layout=True)
         axs[0].hist(DRcons,bins = range(0,100,1))
         axs[0].set_title('Direct repeat conservation')
         axs[0].set_xlabel('Percentage conserved (%)')
@@ -291,6 +294,11 @@ def main(args):
         axs[1].set_xlabel('Percentage AT (%)')
         axs[1].set_title('AT content of leader sequence')
         axs[1].set_ylabel('Counts')
+
+        axs[2].hist(spacerlengths,bins = range(0,100,1))
+        axs[2].set_xlabel('Length of spacers')
+        axs[2].set_title('Length of spacers')
+        axs[2].set_ylabel('Counts')
 
         plt.show()
 
