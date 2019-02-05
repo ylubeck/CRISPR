@@ -57,7 +57,6 @@ if __name__ == '__main__':
         parser.add_argument('-p', '--percidentity', help = 'percentage sequence identity BLAST', default = 95)
 
         args = parser.parse_args()
-        #print(args)
         if args.db != 'nr':
             makeBlastDB(args.database,args.databaseout)
         runBlast(args.input,args.databaseout,args.output,args.percidentity)
