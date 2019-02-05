@@ -1,21 +1,27 @@
+#!/usr/bin/env python3
 #interactive program run
 from tkinter import filedialog
 from tkinter import *
+from guiargs import GUIargs
+
+global input_path
+global output_path
+global DB_path
 
 def selectInput():
+    global input_path
     input = filedialog.askopenfilenames(title = "Select inputfile(s)")
-    print(input)
-    return input
+    input_path = input
 
 def selectOutput():
+    global output_path
     output = filedialog.askdirectory(title = "Select a directory for the output")
-    print(output)
-    return output
+    output_path = output
 
 def selectBlastDB():
+    global DB_path
     DB = filedialog.askdirectory(title = "Select BLAST database directory")
-    print(DB)
-    return DB
+    DB_path = DB
 
 def var_states():
     a = str(runblast.get())
@@ -23,7 +29,11 @@ def var_states():
     c = str(minDR.get())
     d = str(maxDR.get())
     e = str(evidence.get())
+
     print(" ".join([a,b,c,d,e]))
+
+    args = GUIargs(input_path,output_path,True,"vfdb",DB_path,c,d,"95",b,e)
+    args.printVars()
 
 def run_crispr_cas_finder():
     #handler which will receive vars from the GUI
@@ -31,6 +41,12 @@ def run_crispr_cas_finder():
 
 def openREADME():
     print("placeholder for readme")
+
+def showProgress():
+    window = Tk()
+    window.title("Progress...")
+    pbar = tkinter.ttk.Progressbar(window, length = 100)
+
 
 if __name__ == '__main__':
     root = Tk()
@@ -56,8 +72,6 @@ if __name__ == '__main__':
     dostats = IntVar()
     Checkbutton(root, text = "Run blast on spacers", variable = runblast).grid(row = 0, sticky = W)
     Checkbutton(root, text = "Histograms of output", variable = dostats).grid(row = 0,column = 1, sticky = W)
-
-
 
     #entry boxes
     Label(root, text = "Minimum length CRISPR DRs").grid(row = 2)
