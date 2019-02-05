@@ -7,6 +7,7 @@ Main program:
 - split sequences
 TODO:
 - start making database
+- wait for install prodigal
 '''
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -49,38 +50,117 @@ def getSequences(mypath):
     return seqnamelist
 
 def readCCFjson(jsonfile,evidence_threshold,buildname):
+    '''
+    read json file from CCF output and convert it to a fasta file with the correct order and array + spacer IDs
+    send the spacers to reconstructArray for phylogeny purposes later on
+    '''
     conservationDRs = []
     ATcontent = []
     spacerfasta = '../spacers/' + buildname + '.fasta'
+    finalspacerdata = []
+    onlyspacers = []
 
     with open(jsonfile,'r') as j:
         data = json.load(j)
-        with open(spacerfasta, 'w') as w:
-            for seq in data["Sequences"]:
-                if len(seq["Crisprs"]) > 0:
-                    for crispr in seq["Crisprs"]:
-                        if crispr["Evidence_Level"] >= evidence_threshold:
-                            conservationDRs.append(crispr["Conservation_DRs"])
-                            ID = crispr["Name"]
-                            if crispr["Potential_Orientation"] == '-':
-                                nspacers = 0
-                            else:
-                                nspacers = crispr["Spacers"] - 1
-                            for reg in crispr["Regions"]:
-                                if reg["Type"] == "LeftFLANK" and reg["Leader"] == 1:
-                                    ATcontent.append(reg["AT"])
-                                elif reg["Type"] == "RightFLANK" and reg["Leader"] == 1:
-                                    ATcontent.append(reg["AT"])
-                                elif reg["Type"] == "Spacer":
-                                    line = '>' + ID + '_spacerID_' + str(nspacers) + '\n'+ reg["Sequence"] + '\n'
-                                    w.write(line)
-                                    if crispr["Potential_Orientation"] == '-':
-                                        nspacers += 1
-                                    else:
-                                        nspacers -= 1
-        w.close()
+        for seq in data["Sequences"]:
+            if len(seq["Crisprs"]) > 0:
+                counter = 0
+                arrayLength = len(seq["Crisprs"])
+                for crispr in seq["Crisprs"]:
+                    if crispr["Evidence_Level"] >= evidence_threshold:
+                        conservationDRs.append(crispr["Conservation_DRs"])
+                        ID = crispr["Name"]
+                        if crispr["Potential_Orientation"] == '+':
+                            nspacers = 1
+                            narrays = arrayLength - counter
+                        else:
+                            nspacers = crispr["Spacers"]
+                            narrays = 1 + counter
+                        for reg in crispr["Regions"]:
+                            if reg["Type"] == "LeftFLANK" and reg["Leader"] == 1:
+                                ATcontent.append(reg["AT"])
+                            elif reg["Type"] == "RightFLANK" and reg["Leader"] == 1:
+                                ATcontent.append(reg["AT"])
+                            elif reg["Type"] == "Spacer":
+                                if crispr["Potential_Orientation"] == '+':
+                                    #sequence reverse complementair maken en schrijven
+                                    revseq = reverseComplement(reg["Sequence"])
+                                    line = '>' + ID + '_arrayID_' + str(narrays) + '_spacerID_' + str(nspacers) + '\n'+ revseq + '\n'
+                                    finalspacerdata.insert(0,revseq)
+                                    onlyspacers.insert(0,revseq)
+                                    nspacers += 1
+                                else:
+                                    line = '>' + ID + '_arrayID_' + str(narrays) + '_spacerID_' + str(nspacers) + '\n'+ reg["Sequence"] + '\n'
+                                    finalspacerdata.append(line)
+                                    onlyspacers.append(reg["Sequence"])
+                                    nspacers -= 1
+                        counter += 1
+
     j.close()
+
+    with open(spacerfasta, 'w') as w:
+        for line in finalspacerdata:
+            w.write(line)
+    w.close()
+
+    #make the superspacers for phylogeny
+    reconstructArray(onlyspacers, buildname)
+
     return conservationDRs, ATcontent, spacerfasta
+
+def reconstructArray(spacers, buildname):
+    loc = '../reconstructedArray/' + buildname + '_CRISPRarray.fasta'
+    DR = 'N' * 30
+    fas = '>' + buildname + "_crispr\n"
+    for s in spacers:
+        fas += s + DR
+    with open(loc,'w') as w:
+        w.write(fas)
+    w.close()
+
+def makeSinglefile():
+    outloc = "../phylogeny/allsequences.fasta"
+    infiles = getInputfiles("../reconstructedArray/")
+
+    with open(outloc,'w') as w:
+        for f in infiles:
+            with open(f,'r') as r:
+                data = r.read()
+                w.write(data + "\n")
+            r.close()
+    w.close()
+
+def reverseComplement(sequence):
+    '''
+    get the reverse complement of a sequence
+    '''
+    reversedsequence = ''
+    nucs = list(sequence)
+    revnucs = ''
+    for i in nucs[::-1]:
+        if i == 'A' or i == 'a':
+            if i.islower():
+                revnucs += 't'
+            else:
+                revnucs += 'T'
+        elif i == 'T' or i == 't':
+            if i.islower():
+                revnucs += 'a'
+            else:
+                revnucs += 'A'
+        elif i == 'G' or i == 'g':
+            if i.islower():
+                revnucs += 'c'
+            else:
+                revnucs += 'C'
+        elif i == 'C' or i == 'c':
+            if i.islower():
+                revnucs += 'g'
+            else:
+                revnucs += 'G'
+        else:
+            revnucs += 'N'
+    return revnucs
 
 def getReverseComplement(contigs):
     '''
@@ -154,14 +234,23 @@ def addBuildName(file,newInPath):
     f.close()
     return newpath,buildname
 
-def runCrisprCasFinder(input, output, min, max):
-    try:
-        os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -q -so /opt/vmatch-2.3.0/SELECT/sel392.so -outdir " + str(output) + " -minDR " + str(min) + " -maxDR " + str(max))
-        print("Done with CCF")
-    except Exception as e:
-        print("nope")
-        print(str(e))
-        sys.exit(2)
+def runCrisprCasFinder(input, output, min, max,cas):
+    if cas:
+        try:
+            os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -cas -q -so /opt/vmatch-2.3.0/SELECT/sel392.so -outdir " + str(output) + " -minDR " + str(min) + " -maxDR " + str(max))
+            print("Done with CCF")
+        except Exception as e:
+            print("nope")
+            print(str(e))
+            sys.exit(2)
+    else:
+        try:
+            os.system("perl /usr/bin/CRISPRCasFinder.pl -i " + str(input) + " -q -so /opt/vmatch-2.3.0/SELECT/sel392.so -outdir " + str(output) + " -minDR " + str(min) + " -maxDR " + str(max))
+            print("Done with CCF")
+        except Exception as e:
+            print("nope")
+            print(str(e))
+            sys.exit(2)
 
 ##can be deleted if JSON works
 def getSpacers(GFFfiles, hits, buildname):
@@ -210,16 +299,15 @@ def makeDirs(outputlocation):
     if not os.path.exists(outputlocation):
         os.makedirs(str(outputlocation + "/blastout"))
         os.makedirs(str(outputlocation + "/spacers"))
+        os.makedirs(str(outputlocation + "/reconstructedArray"))
+        os.makedirs(str(outputlocation + "/phylogeny"))
     else:
         print("Directories already exist")
 
-def getInputfiles(curwd, input):
+def getInputfiles(input):
     fastalist = []
     if os.path.isdir(input):
-        #for correct abspath, wd has to be set where the input files are
-        #os.chdir(input)
         for file in os.listdir(input):
-            #print(os.path.join(input,file))
             if file.endswith(".fasta"):
                 fastalist.append(os.path.join(input,file))
     else:
@@ -229,6 +317,26 @@ def getInputfiles(curwd, input):
         else:
             fastalist.append(input)
     return fastalist
+
+def makePlots(DRcons,ATstats,spacerlengths):
+    fig, axs = plt.subplots(3, 1, constrained_layout=True)
+    axs[0].hist(DRcons,bins = range(0,100,1))
+    axs[0].set_title('Direct repeat conservation')
+    axs[0].set_xlabel('Percentage conserved (%)')
+    axs[0].set_ylabel('Counts')
+    fig.suptitle('CRISPR result', fontsize=16)
+
+    axs[1].hist(ATstats,bins = range(0,100,1))
+    axs[1].set_xlabel('Percentage AT (%)')
+    axs[1].set_title('AT content of leader sequence')
+    axs[1].set_ylabel('Counts')
+
+    axs[2].hist(spacerlengths,bins = range(0,100,1))
+    axs[2].set_xlabel('Length of spacers')
+    axs[2].set_title('Length of spacers')
+    axs[2].set_ylabel('Counts')
+
+    plt.show()
 
 def main(args):
     '''
@@ -240,7 +348,7 @@ def main(args):
 
     #runs batch of contigs/scaffolds if dir is given
     curcwd = os.getcwd()
-    fastalist = getInputfiles(curcwd,args.input)
+    fastalist = getInputfiles(args.input)
     if len(fastalist) == 0:
         sys.exit("Given directory is empty or does not exist. Check input argument.")
 
@@ -268,7 +376,7 @@ def main(args):
                 print('Oops.')
         print("\nStart CCF ...")
         os.chdir(outpath)
-        runCrisprCasFinder(absInput,buildname,args.minimum,args.maximum)
+        runCrisprCasFinder(absInput,buildname,args.minimum,args.maximum,args.runcas)
         conservationDRs, ATcontent, spacerfasta = readCCFjson(buildname + '/result.json',args.evidencethreshold,buildname)
         DRcons += conservationDRs
         ATstats += ATcontent
@@ -279,28 +387,13 @@ def main(args):
         print("\nRun blast ...")
         runLocalBlast.runBlast(absspacer,absBVDB,blastout,args.percidentity)
         print("\nDone with blast")
+
+    makeSinglefile()
+
     #make plot of spacerlengths
     if args.statistics:
         #runLocalBlast.seqPlot(spacerlengths,args.minimum,args.maximum)
-
-        fig, axs = plt.subplots(3, 1, constrained_layout=True)
-        axs[0].hist(DRcons,bins = range(0,100,1))
-        axs[0].set_title('Direct repeat conservation')
-        axs[0].set_xlabel('Percentage conserved (%)')
-        axs[0].set_ylabel('Counts')
-        fig.suptitle('CRISPR result', fontsize=16)
-
-        axs[1].hist(ATstats,bins = range(0,100,1))
-        axs[1].set_xlabel('Percentage AT (%)')
-        axs[1].set_title('AT content of leader sequence')
-        axs[1].set_ylabel('Counts')
-
-        axs[2].hist(spacerlengths,bins = range(0,100,1))
-        axs[2].set_xlabel('Length of spacers')
-        axs[2].set_title('Length of spacers')
-        axs[2].set_ylabel('Counts')
-
-        plt.show()
+        makeplots(DRcons,ATstats,spacerlengths)
 
 if __name__ == '__main__':
     try:
@@ -315,6 +408,7 @@ if __name__ == '__main__':
         parser.add_argument('-pid','--percidentity', help = 'minimum sequence identity blastn', default = 95)
         parser.add_argument('-stats','--statistics',help = 'make plots with overview of data', default = False, action = 'store_true')
         parser.add_argument('-et','--evidencethreshold', help = 'minimum evidence level for crispr detection. 1 - 4, higher is stricter.',type = int ,default = 4,choices = range(1,5,1))
+        parser.add_argument('-cas', '--runcas' , help = 'additional search for cas genes', default = False, action = 'store_true')
         args = parser.parse_args()
 
         main(args)
