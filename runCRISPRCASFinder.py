@@ -59,7 +59,7 @@ def readCCFjson(jsonfile,evidence_threshold,buildname):
     spacerfasta = '../spacers/' + buildname + '.fasta'
     finalspacerdata = []
     onlyspacers = []
-
+    prevOrientation = "ND"
     with open(jsonfile,'r') as j:
         data = json.load(j)
         for seq in data["Sequences"]:
@@ -73,20 +73,32 @@ def readCCFjson(jsonfile,evidence_threshold,buildname):
                         if crispr["Potential_Orientation"] == '+':
                             nspacers = 1
                             narrays = arrayLength - counter
-                        else:
+                            prevOrientation = '+'
+                        elif crispr["Potential_Orientation"] == '-':
                             nspacers = crispr["Spacers"]
                             narrays = 1 + counter
+                            prevOrientation = '-'
+                        else:
+                            if prevOrientation == "+":
+                                nspacers = 1
+                                narrays = arrayLength - counter
+                            elif prevOrientation == '-':
+                                nspacers = crispr["Spacers"]
+                                narrays = 1 + counter
+                            else:
+                                nspacers = 1
+                                narrays = arrayLength - counter
                         for reg in crispr["Regions"]:
                             if reg["Type"] == "LeftFLANK" and reg["Leader"] == 1:
                                 ATcontent.append(reg["AT"])
                             elif reg["Type"] == "RightFLANK" and reg["Leader"] == 1:
                                 ATcontent.append(reg["AT"])
                             elif reg["Type"] == "Spacer":
-                                if crispr["Potential_Orientation"] == '+':
+                                if crispr["Potential_Orientation"] == '+' or prevOrientation == '+':
                                     #sequence reverse complementair maken en schrijven
                                     revseq = reverseComplement(reg["Sequence"])
                                     line = '>' + ID + '_arrayID_' + str(narrays) + '_spacerID_' + str(nspacers) + '\n'+ revseq + '\n'
-                                    finalspacerdata.insert(0,revseq)
+                                    finalspacerdata.insert(0,line)
                                     onlyspacers.insert(0,revseq)
                                     nspacers += 1
                                 else:
@@ -110,10 +122,10 @@ def readCCFjson(jsonfile,evidence_threshold,buildname):
 
 def reconstructArray(spacers, buildname):
     loc = '../reconstructedArray/' + buildname + '_CRISPRarray.fasta'
-    DR = 'N' * 30
+    #DR = 'N' * 30
     fas = '>' + buildname + "_crispr\n"
     for s in spacers:
-        fas += s + DR
+        fas += s #+ DR
     with open(loc,'w') as w:
         w.write(fas)
     w.close()
@@ -162,6 +174,7 @@ def reverseComplement(sequence):
             revnucs += 'N'
     return revnucs
 
+## can be removed
 def getReverseComplement(contigs):
     '''
     get the reverse complement of a sequence
@@ -212,7 +225,7 @@ def getReverseComplement(contigs):
                 reversedsequence = revnucs + "\n" + reversedsequence
         a.write(reversedsequence)
     a.close()
-
+##
 def addBuildName(file,newInPath):
     # add the filename in front of each fasta sequence of the input.
     # copies inputfile and returns new file and path
@@ -338,6 +351,13 @@ def makePlots(DRcons,ATstats,spacerlengths):
 
     plt.show()
 
+def makeTsv(buildnames, DRcons, ATstats, spacerlengths,outpath):
+    dat = {'build': buildnames, 'DRconservation': DRcons, 'ATcontent': ATstats, 'spacerlength': spacerlengths}
+    df = pd.DataFrame(dat)
+    fn = outpath + '/summary.csv'
+    df.to_csv(fn, sep = '\t')
+
+
 def main(args):
     '''
     run CRISPRCasFinder
@@ -364,6 +384,9 @@ def main(args):
     ATstats = []
     DRcons = []
     spacerlengths = []
+    arraylengths = []
+    buildnames = []
+
     for fastafile in fastalist:
         os.chdir(curcwd)
         newpath, buildname = addBuildName(fastafile,revInvPath)
@@ -372,17 +395,19 @@ def main(args):
             try:
                 print("Fetching reverse complementary fastas ...")
                 getReverseComplement(absInput)
-            except:
-                print('Oops.')
+            except Exception as e:
+                print('Oops. See error:\n' + str(e))
         print("\nStart CCF ...")
         os.chdir(outpath)
         runCrisprCasFinder(absInput,buildname,args.minimum,args.maximum,args.runcas)
         conservationDRs, ATcontent, spacerfasta = readCCFjson(buildname + '/result.json',args.evidencethreshold,buildname)
         DRcons += conservationDRs
         ATstats += ATcontent
+        buildnames = buildnames + [buildname] * len(conservationDRs)
         absspacer = os.path.abspath(os.path.join('.',spacerfasta))
-        seqlengths = runLocalBlast.seqlength(absspacer)
+        seqlengths, arrayLength = runLocalBlast.seqlength(absspacer)
         spacerlengths += seqlengths
+        arraylengths.append(arrayLength)
         blastout = absOutput  + "/blastout/" + buildname + "blastout.out"
         print("\nRun blast ...")
         runLocalBlast.runBlast(absspacer,absBVDB,blastout,args.percidentity)
@@ -393,7 +418,15 @@ def main(args):
     #make plot of spacerlengths
     if args.statistics:
         #runLocalBlast.seqPlot(spacerlengths,args.minimum,args.maximum)
-        makeplots(DRcons,ATstats,spacerlengths)
+        #for testing
+        print(buildnames)
+        print(DRcons)
+        print(ATstats)
+        print(spacerlengths)
+        print(arraylengths)
+        #/for testing
+        #makeplots(DRcons,ATstats,spacerlengths)
+        #makeTsv(buildnames, DRcons, ATstats, spacerlengths,absOutput)
 
 if __name__ == '__main__':
     try:
@@ -412,6 +445,7 @@ if __name__ == '__main__':
         args = parser.parse_args()
 
         main(args)
-    except:
+    except Exception as e:
+        print("error: " + str(e))
         print("See -h for help")
         sys.exit(1)
