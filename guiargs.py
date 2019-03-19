@@ -14,7 +14,7 @@ class GUIargs:
         self.evidencethreshold = evidencethreshold
 
     def printVars(self):
-        print("input: " + self.input)
-        print("output: " + self.output)
+        print("input: " + str(self.input))
+        print("output: " + str(self.output))
         print("reverse: "  + str(self.reverse))
         print("stats: " + str(self.statistics))
