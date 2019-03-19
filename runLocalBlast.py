@@ -3,6 +3,7 @@ import sys
 import argparse
 import os
 import matplotlib.pyplot as plt
+import re
 
 #from Bio.Blast.Applications import NcbiblastnCommandline
 def seqPlot(lengthlist,min,max):
@@ -12,13 +13,20 @@ def seqPlot(lengthlist,min,max):
 def seqlength(seq):
     with open(seq,'r') as s:
         seqLengths = []
+        arrayLength = 0
+        prevID = ''
+        prog = re.compile("arrayID_\d+")
         for line in s:
             if line.startswith(">") or line in ['\n']:
-                continue
+                m = prog.search(line)
+                l = m.group(0)
+                if prevID != l:
+                    arrayLength += 1
+                    prevID = l
             else:
                 seqLengths.append(len(line))
     s.close()
-    return seqLengths
+    return seqLengths, arrayLength
 
 
 def makeShortlist(blastout,pid):
@@ -60,6 +68,7 @@ if __name__ == '__main__':
         if args.db != 'nr':
             makeBlastDB(args.database,args.databaseout)
         runBlast(args.input,args.databaseout,args.output,args.percidentity)
-    except:
+    except Exception as e:
+        print("error: " + str(e))
         print("See -h for help")
         sys.exit(1)
