@@ -3,40 +3,39 @@
 from tkinter import filedialog
 from tkinter import *
 from guiargs import GUIargs
+import runCRISPRCASFinder
 
-global input_path
-global output_path
-global DB_path
+input_path = ''
+output_path = ''
+DB_path = ''
 
 def selectInput():
     global input_path
-    input = filedialog.askopenfilenames(title = "Select inputfile(s)")
-    input_path = input
+    input_path = filedialog.askopenfilenames(title = "Select inputfile(s)")
 
 def selectOutput():
     global output_path
-    output = filedialog.askdirectory(title = "Select a directory for the output")
-    output_path = output
+    output_path = filedialog.askdirectory(title = "Select a directory for the output")
 
 def selectBlastDB():
     global DB_path
-    DB = filedialog.askdirectory(title = "Select BLAST database directory")
-    DB_path = DB
+    DB_path = filedialog.askdirectory(title = "Select BLAST database directory")
 
 def var_states():
+    ''' For testing. Can be removed when GUI works '''
     a = str(runblast.get())
     b = str(dostats.get())
     c = str(minDR.get())
     d = str(maxDR.get())
     e = str(evidence.get())
 
-    print(" ".join([a,b,c,d,e]))
+    args = GUIargs(input_path,output_path,False,"vfdb",DB_path,c,d,95,b,e)
 
-    args = GUIargs(input_path,output_path,True,"vfdb",DB_path,c,d,"95",b,e)
     args.printVars()
 
 def run_crispr_cas_finder():
     #handler which will receive vars from the GUI
+
     pass
 
 def openREADME():
@@ -77,18 +76,21 @@ if __name__ == '__main__':
     Label(root, text = "Minimum length CRISPR DRs").grid(row = 2)
     Label(root, text = "Maximum length CRISPR DRs").grid(row = 3)
     Label(root, text = "Evidence threshold CRISPRs").grid(row = 4)
-
+    Label(root, text = "\'%\' sequence identity spacers BLAST").grid(row = 5)
     minDR = Entry(root)
     maxDR = Entry(root)
     evidence = Entry(root)
+    percID = Entry(root)
 
     minDR.insert(END,23)
     maxDR.insert(END,55)
     evidence.insert(END,4)
+    percID.insert(END,95)
 
     minDR.grid(row = 2, column = 1)
     maxDR.grid(row = 3, column = 1)
     evidence.grid(row = 4, column = 1)
+    percID.grid(row = )
 
     #for now, check input
     Button(root, text = 'Run program', command = var_states).grid(row = 5, sticky = W)
