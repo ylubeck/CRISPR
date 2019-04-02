@@ -54,6 +54,7 @@ def readCCFjson(jsonfile,evidence_threshold,buildname):
     read json file from CCF output and convert it to a fasta file with the correct order and array + spacer IDs
     send the spacers to reconstructArray for phylogeny purposes later on
     '''
+
     conservationDRs = []
     ATcontent = []
     spacerfasta = '../spacers/' + buildname + '.fasta'
@@ -358,6 +359,13 @@ def makeTsv(buildnames, DRcons, ATstats, spacerlengths,outpath):
     df.to_csv(fn, sep = '\t')
 
 
+def updateCRISPRdb(speciesid, narrays, nspacers, spacerlist):
+    con = db.db_connect()
+    cur = con.cursor()
+
+
+
+
 def main(args):
     '''
     run CRISPRCasFinder
@@ -412,7 +420,6 @@ def main(args):
         print("\nRun blast ...")
         runLocalBlast.runBlast(absspacer,absBVDB,blastout,args.percidentity)
         print("\nDone with blast")
-
     makeSinglefile()
 
     #make plot of spacerlengths
